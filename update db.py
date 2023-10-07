@@ -5,7 +5,7 @@ import datetime
 import json
 import requests
 
-db_url = 'https://github.com/daniel-DE-ITEX/PTSP-status-checker/raw/main/sqlite/testDB.db'
+db_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/blob/master/data/testDB.db'
 excel_file_loc = "C:/Users/daniel.opanubi/Downloads/ITEX RCA (30-09-23).xlsx"
 
 # Define a function to download the database file and return the local file path
@@ -47,9 +47,9 @@ def load_to_github():
     # Connect to the githubAPI with the access tokens and usernames
     username = "daniel_de_ITEX"
     repository = "PTSP-app-dataupdate"
-    file_path = "testDB.db"
+    file_path = "data/newDB.db"
 
-    access_token = ""
+    access_token = "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"
     # Enter the location of the new db file
     new_db_filepath = local_db_path
     
