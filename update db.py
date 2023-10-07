@@ -53,3 +53,29 @@ def load_to_github():
     # Enter the location of the new db file
     new_db_filepath = local_db_path
     
+    # Read the binary data from the new SQLite database file
+    with open(new_db_filepath, 'rb') as file:
+        new_content = file.read()
+
+    # Create the URL for the API endpoint
+    url = f'https://api.github.com/repos/{username}/{repository}/contents/{file_path}'
+
+    # Create the request headers with the authorization token
+    headers = {
+        'Authorization': f'token {access_token}'
+    }
+
+    # Create the request payload with the new content as a base64-encoded string
+    data = {
+        'message': 'Update database file',
+        'content': new_content.decode('latin1'),
+        'sha': "d30b7bf164ffb1012b5d3fba2ee7a7344f2abbf6"
+    }
+
+    # Send a PUT request to update the file
+    response = requests.put(url, headers=headers, json=data)
+
+    if response.status_code == 200:
+        print('Database file updated successfully.')
+    else:
+        print('Failed to update database file:', response.text)
