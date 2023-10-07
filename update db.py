@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import sqlite3
 import datetime
@@ -30,17 +29,7 @@ def connect_and_update_database():
     df = pd.read_excel(excel_file_loc)
     df.to_sql('RCA_table', conn, if_exists='replace', index=False)
 
-    
     conn = sqlite3.connect(local_db_path)
-    cursor = conn.cursor()
-    query1 = """
-
-    """
-    query2 = """
-    
-    """
-    cursor.execute(query1)
-    cursor.execute(query2)
 
 def load_to_github():
 
