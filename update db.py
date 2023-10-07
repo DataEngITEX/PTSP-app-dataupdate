@@ -1,10 +1,8 @@
 import pandas as pd
 import sqlite3
-import datetime
-import json
 import requests
 
-db_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/blob/master/data/testDB.db'
+db_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
 excel_file_loc = "C:/Users/daniel.opanubi/Downloads/ITEX RCA (30-09-23).xlsx"
 
 # Define a function to download the database file and return the local file path
@@ -13,7 +11,7 @@ def download_database(url):
     if response.status_code == 200:
         # Define a local file path to save the downloaded database
         global local_db_path
-        local_db_path = 'testDB.db'
+        local_db_path = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/downloaded.db'
         
         # Save the content of the response to the local file
         with open(local_db_path, 'wb') as f:
@@ -25,11 +23,11 @@ def download_database(url):
     
 # Define a function to connect and update the database file in local
 def connect_and_update_database():
-    local_db_path = download_database(db_url)
+
+    loc_db_path = download_database(db_url)
+    conn = sqlite3.connect(loc_db_path)
     df = pd.read_excel(excel_file_loc)
     df.to_sql('RCA_table', conn, if_exists='replace', index=False)
-
-    conn = sqlite3.connect(local_db_path)
 
 def load_to_github():
 
@@ -68,3 +66,12 @@ def load_to_github():
         print('Database file updated successfully.')
     else:
         print('Failed to update database file:', response.text)
+
+def main():
+    download_database(db_url)
+    connect_and_update_database()
+    load_to_github()
+    print('updated')
+
+if __name__ == '__main__':
+    main()
