@@ -2,9 +2,11 @@ import pandas as pd
 import sqlite3
 import requests
 import base64
+import os
 
 
-db_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
+raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
+sha_url = 'https://api.github.com/repos/daniel-DE-ITEX/PTSP-app-dataupdate/contents/data/testDB.db'
 excel_file_loc = "C:/Users/daniel.opanubi/Downloads/ITEX RCA (30-09-23).xlsx"
 
 # Define a function to download the database file and return the local file path
@@ -26,7 +28,7 @@ def download_database(url):
 # Define a function to connect and update the database file in local
 def connect_and_update_database():
 
-    loc_db_path = download_database(db_url)
+    loc_db_path = download_database(raw_url)
     conn = sqlite3.connect(loc_db_path)
     df = pd.read_excel(excel_file_loc)
     df = df.astype(str)
@@ -52,11 +54,13 @@ def connect_and_update_database():
     # Replace the old database with the new file
     try:
         df.to_sql('RCA_table', conn, if_exists='replace', index=False)
+        print("Table modified")
     except Exception as e:
         print(f"An error occurred: {e}")
         
 def load_to_github():
 
+    print('Loading to github')
     # Connect to the githubAPI with the access tokens and usernames
     username = "daniel-DE-ITEX"
     repository = "PTSP-app-dataupdate"
@@ -71,6 +75,9 @@ def load_to_github():
     with open(new_db_filepath, 'rb') as file:
         new_content = file.read()
 
+    # Encode the binary content as Base64
+    content_base64 = base64.b64encode(new_content).decode('utf-8')
+
     # Create the URL for the API endpoint
     url = f'https://api.github.com/repos/{username}/{repository}/contents/{file_path}'
 
@@ -79,11 +86,30 @@ def load_to_github():
         'Authorization': f'token {access_token}'
     }
 
+    def get_sha():
+            response = requests.get(sha_url, headers=headers)
+
+            if response.status_code == 200:
+                try:
+                    # Try to parse JSON data
+                    file_info = response.json()
+                    sha = file_info.get("sha")
+                    
+                    return sha
+                
+                except Exception as e:
+                    print(f"Error parsing JSON response: {e}")
+            else:
+                print(f"Failed to retrieve file info: {response.status_code} - {response.text}")
+
+        
+    sha = get_sha()
+
     # Create the request payload with the new content as a base64-encoded string
     data = {
         'message': 'Update database file',
-        'content': new_content.decode('latin1'),
-        'sha': "d30b7bf164ffb1012b5d3fba2ee7a7344f2abbf6"
+        'content': content_base64,
+        'sha': sha
     }
 
     # Send a PUT request to update the file
@@ -94,11 +120,23 @@ def load_to_github():
     else:
         print('Failed to update database file:', response.text, response.status_code)
 
+def clean_data():
+
+    try:
+        os.remove(local_db_path)
+        print(f"File '{local_db_path}' deleted successfully.")
+    except FileNotFoundError:
+        print(f"File '{local_db_path}' not found.")
+    except PermissionError:
+        print(f"Permission denied. Unable to delete file '{local_db_path}'.")
+    except Exception as e:
+        print(f"An error occurred while deleting the file: {e}")
+
 def main():
-    download_database(db_url)
+    download_database(raw_url)
     connect_and_update_database()
-    #load_to_github()
-    print('updated')
+    load_to_github()
+    clean_data()
 
 if __name__ == '__main__':
     main()
