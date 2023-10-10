@@ -1,6 +1,8 @@
 import pandas as pd
 import sqlite3
 import requests
+import base64
+
 
 db_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
 excel_file_loc = "C:/Users/daniel.opanubi/Downloads/ITEX RCA (30-09-23).xlsx"
@@ -11,7 +13,7 @@ def download_database(url):
     if response.status_code == 200:
         # Define a local file path to save the downloaded database
         global local_db_path
-        local_db_path = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/downloaded.db'
+        local_db_path = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/download.db'
         
         # Save the content of the response to the local file
         with open(local_db_path, 'wb') as f:
@@ -27,16 +29,41 @@ def connect_and_update_database():
     loc_db_path = download_database(db_url)
     conn = sqlite3.connect(loc_db_path)
     df = pd.read_excel(excel_file_loc)
-    df.to_sql('RCA_table', conn, if_exists='replace', index=False)
+    df = df.astype(str)
 
+    cursor = conn.cursor()
+    query1 = """
+            CREATE TABLE RCA_table1 (
+                Terminal_ID TEXT, 
+                Merchant_Name TEXT, 
+                STATUS TEXT,
+                CONNECTED TEXT, 
+                LAST_TRANSACTION_DATE TEXT
+            );
+            """
+    query2 = "DROP TABLE RCA_table;"
+    
+    query3 = "ALTER TABLE RCA_table1 RENAME TO RCA_table;"
+    cursor.execute(query1)
+    cursor.execute(query2)
+    cursor.execute(query3)
+
+
+    # Replace the old database with the new file
+    try:
+        df.to_sql('RCA_table', conn, if_exists='replace', index=False)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        
 def load_to_github():
 
     # Connect to the githubAPI with the access tokens and usernames
-    username = "daniel_de_ITEX"
+    username = "daniel-DE-ITEX"
     repository = "PTSP-app-dataupdate"
-    file_path = "data/newDB.db"
+    file_path = "data/testDB.db"
 
-    access_token = "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"
+    access_token = "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"
+    
     # Enter the location of the new db file
     new_db_filepath = local_db_path
     
@@ -65,12 +92,12 @@ def load_to_github():
     if response.status_code == 200:
         print('Database file updated successfully.')
     else:
-        print('Failed to update database file:', response.text)
+        print('Failed to update database file:', response.text, response.status_code)
 
 def main():
     download_database(db_url)
     connect_and_update_database()
-    load_to_github()
+    #load_to_github()
     print('updated')
 
 if __name__ == '__main__':
