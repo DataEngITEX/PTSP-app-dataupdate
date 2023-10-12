@@ -7,7 +7,8 @@ import os
 
 raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
 sha_url = 'https://api.github.com/repos/daniel-DE-ITEX/PTSP-app-dataupdate/contents/data/testDB.db'
-excel_file_loc = "C:/Users/daniel.opanubi/Downloads/ITEX RCA (30-09-23).xlsx"
+rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/rca_file/'
+
 
 # Define a function to download the database file and return the local file path
 def download_database(url):
@@ -30,8 +31,16 @@ def connect_and_update_database():
 
     loc_db_path = download_database(raw_url)
     conn = sqlite3.connect(loc_db_path)
-    df = pd.read_excel(excel_file_loc)
-    df = df.astype(str)
+
+    for xfile in os.listdir(rca_loc):
+        if len(os.listdir(rca_loc)) > 0:
+            excel_file_loc = str(rca_loc) + str(xfile)
+
+            df = pd.read_excel(excel_file_loc)
+            df = df.astype(str)
+            df['LAST_TRANSACTION_DATE'] = df['LAST_TRANSACTION_DATE'].apply(lambda x: x if pd.to_datetime(x, errors='coerce') is not pd.NaT else 'Not available')
+            df['LAST_TRANSACTION_DATE'] = pd.to_datetime(df['LAST_TRANSACTION_DATE'], errors='coerce')
+            df['LAST_TRANSACTION_DATE'] = df['LAST_TRANSACTION_DATE'].dt.date
 
     cursor = conn.cursor()
     query1 = """
@@ -135,7 +144,7 @@ def clean_data():
 def main():
     download_database(raw_url)
     connect_and_update_database()
-    load_to_github()
+    #load_to_github()
     clean_data()
 
 if __name__ == '__main__':
