@@ -9,7 +9,6 @@ raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data
 sha_url = 'https://api.github.com/repos/daniel-DE-ITEX/PTSP-app-dataupdate/contents/data/testDB.db'
 rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/rca_file/'
 
-
 # Define a function to download the database file and return the local file path
 def download_database(url):
     response = requests.get(url)
@@ -22,6 +21,7 @@ def download_database(url):
         with open(local_db_path, 'wb') as f:
             f.write(response.content)
         
+        print('DB Downloaded')
         return local_db_path
     else:
         raise Exception("Failed to download the database.")
@@ -75,7 +75,7 @@ def load_to_github():
     repository = "PTSP-app-dataupdate"
     file_path = "data/testDB.db"
 
-    access_token = "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"
+    access_token = "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"
     
     # Enter the location of the new db file
     new_db_filepath = local_db_path
@@ -96,20 +96,20 @@ def load_to_github():
     }
 
     def get_sha():
-            response = requests.get(sha_url, headers=headers)
+        response = requests.get(sha_url, headers=headers)
 
-            if response.status_code == 200:
-                try:
-                    # Try to parse JSON data
-                    file_info = response.json()
-                    sha = file_info.get("sha")
-                    
-                    return sha
-                
-                except Exception as e:
+        if response.status_code == 200:
+            try:
+                # Try to parse JSON data
+                file_info = response.json()
+                sha = file_info.get("sha")
+                print('sha obtained')
+                return sha
+
+            except Exception as e:
                     print(f"Error parsing JSON response: {e}")
-            else:
-                print(f"Failed to retrieve file info: {response.status_code} - {response.text}")
+        else:
+            print(f"Failed to retrieve file info: {response.status_code} - {response.text}")
 
         
     sha = get_sha()
@@ -144,7 +144,7 @@ def clean_data():
 def main():
     download_database(raw_url)
     connect_and_update_database()
-    #load_to_github()
+    load_to_github()
     clean_data()
 
 if __name__ == '__main__':
