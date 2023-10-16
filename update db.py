@@ -3,11 +3,73 @@ import sqlite3
 import requests
 import base64
 import os
+from ftplib import FTP
 
 
 raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
 sha_url = 'https://api.github.com/repos/daniel-DE-ITEX/PTSP-app-dataupdate/contents/data/testDB.db'
-rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/rca_file/'
+rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/outputrca_file/'
+saveto = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/inputrca/downloadrcafile.xlsx'
+
+def retrieve_rca_file():
+    # Connect to the FTP server
+    ftp_host = 'nibsswebserver.nibss-plc.com.ng'
+    ftp_user = 'fanwuzia'
+    ftp_pass = 'Mother89'
+    ftp = FTP(ftp_host)
+    # Log in
+    ftp.login(ftp_user, ftp_pass)
+    # Change to the directory containing the file you want to download
+    ftp.cwd('/users/Report_EIU/ITEX/RCA_files')
+    file_list = ftp.nlst()
+
+    for rcafile in file_list:
+        # Download the file
+        with open(saveto, 'wb') as file:
+            ftp.retrbinary('RETR ' + rcafile, file.write)
+            print('file downloaded')
+
+    # Close the FTP connection
+    ftp.quit()
+
+def transform_file():
+    rca_df = pd.read_excel(saveto, sheet_name=None)
+    reg_df = rca_df['REGISTERED TERMINALS']
+    connected_df = rca_df['CONNECTED TERMINALS']
+    active_df = rca_df['ACTIVE TERMINALS']
+
+    del reg_df['Merchant_ID']
+    del reg_df['Bank']
+    del reg_df['Terminal_Owner']
+    del reg_df['MCC']
+    del reg_df['ptsp_code']
+    del reg_df['PTSP']
+    del reg_df['Merchant_Account_No']
+    del reg_df['AccountNo']
+    del reg_df['Registered_Date']
+    del reg_df['ConnectDate']
+    del reg_df['Contact']
+    del reg_df['Address']
+    del reg_df['Phone']
+    del reg_df['State']
+
+
+    for tid in reg_df['Terminal_ID']:
+        if tid in active_df['Terminal_ID']:
+            reg_df['STATUS'] = 'ACTIVE'
+        else:
+            reg_df['STATUS'] = 'INACTIVE'
+
+    
+    for tid in reg_df['Terminal_ID']:
+        if tid in connected_df['Terminal_ID']:
+            reg_df['CONNECTED'] = 'YES'
+        else:
+            reg_df['CONNECTED'] = 'NO'
+
+    reg_df['LAST_TRANSACTION_DATE'] = reg_df['LastSeenDate']
+
+    reg_df.to_excel((str(rca_loc) + 'newrca.xlsx'), index=False)
 
 # Define a function to download the database file and return the local file path
 def download_database(url):
@@ -142,6 +204,8 @@ def clean_data():
         print(f"An error occurred while deleting the file: {e}")
 
 def main():
+    retrieve_rca_file()
+    transform_file()
     download_database(raw_url)
     connect_and_update_database()
     load_to_github()
