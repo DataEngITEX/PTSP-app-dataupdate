@@ -30,26 +30,29 @@ def retrieve_rca_file():
         ftp.cwd(source_directory)
         file_list = ftp.nlst()
 
-        for rcafile in file_list:
-            try:
-                with open(rcafile, 'wb') as file:
-                    ftp.retrbinary('RETR ' + source_directory + '/' + rcafile, file.write)
-                print(f'{rcafile} copied')
+        if len(file_list) == 0:
+            print('RCA file unavailable, try later')
+        else:
+            for rcafile in file_list:
+                try:
+                    with open(rcafile, 'wb') as file:
+                        ftp.retrbinary('RETR ' + source_directory + '/' + rcafile, file.write)
+                    print(f'{rcafile} copied')
 
-                with open(rcafile, 'rb') as file:
-                    ftp.storbinary('STOR ' + destination_directory + '/' + rcafile, file)
-                print(f'{rcafile} uploaded to archive')
+                    with open(rcafile, 'rb') as file:
+                        ftp.storbinary('STOR ' + destination_directory + '/' + rcafile, file)
+                    print(f'{rcafile} uploaded to archive')
 
-                # Download the file
-                with open(saveto, 'wb') as file:
-                    ftp.retrbinary('RETR ' + rcafile, file.write)
-                    print(f'{rcafile} downloaded')
+                    # Download the file
+                    with open(saveto, 'wb') as file:
+                        ftp.retrbinary('RETR ' + rcafile, file.write)
+                        print(f'{rcafile} downloaded')
 
-                ftp.delete(rcafile)
-                print(f'{rcafile} deleted from the source directory')
+                    ftp.delete(rcafile)
+                    print(f'{rcafile} deleted from the source directory')
 
-            except Exception as e:
-                print(f"An error occurred while processing {rcafile}: {e}")
+                except Exception as e:
+                    print(f"An error occurred while processing {rcafile}: {e}")
 
     except error_perm as e:
         print(f"FTP error: {e}")
