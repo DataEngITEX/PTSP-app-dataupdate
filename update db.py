@@ -3,7 +3,8 @@ import sqlite3
 import requests
 import base64
 import os
-from ftplib import FTP
+from ftplib import FTP, error_perm
+
 
 
 raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
@@ -12,25 +13,54 @@ rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/P
 saveto = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/inputrca/downloadrcafile.xlsx'
 
 def retrieve_rca_file():
-    # Connect to the FTP server
-    ftp_host = 'nibsswebserver.nibss-plc.com.ng'
-    ftp_user = 'fanwuzia'
-    ftp_pass = 'Mother89'
-    ftp = FTP(ftp_host)
-    # Log in
-    ftp.login(ftp_user, ftp_pass)
-    # Change to the directory containing the file you want to download
-    ftp.cwd('/users/Report_EIU/ITEX/RCA_files')
-    file_list = ftp.nlst()
+    try:
+        # Connect to the FTP server
+        ftp_host = 'nibsswebserver.nibss-plc.com.ng'
+        ftp_user = 'fanwuzia'
+        ftp_pass = 'Mother89'
+        ftp = FTP(ftp_host)
 
-    for rcafile in file_list:
-        # Download the file
-        with open(saveto, 'wb') as file:
-            ftp.retrbinary('RETR ' + rcafile, file.write)
-            print('file downloaded')
+        # Log in
+        ftp.login(ftp_user, ftp_pass)
 
-    # Close the FTP connection
-    ftp.quit()
+        # Change to the directory containing the file you want to download
+        source_directory = '/users/Report_EIU/ITEX/RCA_files_input'
+        destination_directory = '/users/Report_EIU/ITEX/RCA_files_archive'
+
+        ftp.cwd(source_directory)
+        file_list = ftp.nlst()
+
+        for rcafile in file_list:
+            try:
+                with open(rcafile, 'wb') as file:
+                    ftp.retrbinary('RETR ' + source_directory + '/' + rcafile, file.write)
+                print(f'{rcafile} copied')
+
+                with open(rcafile, 'rb') as file:
+                    ftp.storbinary('STOR ' + destination_directory + '/' + rcafile, file)
+                print(f'{rcafile} uploaded to archive')
+
+                # Download the file
+                with open(saveto, 'wb') as file:
+                    ftp.retrbinary('RETR ' + rcafile, file.write)
+                    print(f'{rcafile} downloaded')
+
+                ftp.delete(rcafile)
+                print(f'{rcafile} deleted from the source directory')
+
+            except Exception as e:
+                print(f"An error occurred while processing {rcafile}: {e}")
+
+    except error_perm as e:
+        print(f"FTP error: {e}")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+    finally:
+        # Close the FTP connection
+        ftp.quit()
+
 
 def transform_file():
     rca_df = pd.read_excel(saveto, sheet_name=None)
@@ -54,23 +84,27 @@ def transform_file():
     del reg_df['State']
 
 
-    for tid in reg_df['Terminal_ID']:
-        if tid in active_df['Terminal_ID']:
-            reg_df['STATUS'] = 'ACTIVE'
-        else:
-            reg_df['STATUS'] = 'INACTIVE'
-
+    # Update the 'STATUS' column based on conditions
+    reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
+        lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
+    )
     
-    for tid in reg_df['Terminal_ID']:
-        if tid in connected_df['Terminal_ID']:
-            reg_df['CONNECTED'] = 'YES'
-        else:
-            reg_df['CONNECTED'] = 'NO'
+    # Update the 'CONNECTED' column based on conditions
+    reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
+        lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
+    )
 
-    reg_df['LAST_TRANSACTION_DATE'] = reg_df['LastSeenDate']
+    # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
+    reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
 
-    reg_df.to_excel((str(rca_loc) + 'newrca.xlsx'), index=False)
 
+    try:
+        reg_df.to_excel((str(rca_loc) + 'newrca.xlsx'), index=False, engine='xlsxwriter')
+
+    except Exception as ex:
+        print(f'An error occured in building excel file: {ex}')
+
+        
 # Define a function to download the database file and return the local file path
 def download_database(url):
     response = requests.get(url)
