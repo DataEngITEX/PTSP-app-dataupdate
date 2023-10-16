@@ -106,7 +106,6 @@ def transform_file():
 
     except Exception as ex:
         print(f'An error occured in building excel file: {ex}')
-
         
 # Define a function to download the database file and return the local file path
 def download_database(url):
