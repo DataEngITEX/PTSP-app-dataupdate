@@ -9,8 +9,8 @@ from ftplib import FTP, error_perm
 
 raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
 sha_url = 'https://api.github.com/repos/daniel-DE-ITEX/PTSP-app-dataupdate/contents/data/testDB.db'
-rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/outputrca_file/'
-saveto = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/inputrca/downloadrcafile.xlsx'
+rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/processedrca_file/'
+inputrca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/inputrca/downloadrcafile.xlsx'
 
 def retrieve_rca_file():
     try:
@@ -44,7 +44,7 @@ def retrieve_rca_file():
                     print(f'{rcafile} uploaded to archive')
 
                     # Download the file
-                    with open(saveto, 'wb') as file:
+                    with open(inputrca_loc, 'wb') as file:
                         ftp.retrbinary('RETR ' + rcafile, file.write)
                         print(f'{rcafile} downloaded')
 
@@ -58,7 +58,7 @@ def retrieve_rca_file():
         print(f"FTP error: {e}")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Unable to connect to FTP: {e}")
 
     finally:
         # Close the FTP connection
@@ -66,46 +66,61 @@ def retrieve_rca_file():
 
 
 def transform_file():
-    rca_df = pd.read_excel(saveto, sheet_name=None)
-    reg_df = rca_df['REGISTERED TERMINALS']
-    connected_df = rca_df['CONNECTED TERMINALS']
-    active_df = rca_df['ACTIVE TERMINALS']
+    if len(os.listdir(inputrca_loc)) == 0:
+        print('No raw file to process')
+    else:
+        try:
+            rca_df = pd.read_excel(inputrca_loc, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
+            print('Raw RCA file loaded')
+            try:
+                # Break up the excel tabs into different dataframes
+                reg_df = rca_df['REGISTERED TERMINALS']
+                connected_df = rca_df['CONNECTED TERMINALS']
+                active_df = rca_df['ACTIVE TERMINALS']
 
-    del reg_df['Merchant_ID']
-    del reg_df['Bank']
-    del reg_df['Terminal_Owner']
-    del reg_df['MCC']
-    del reg_df['ptsp_code']
-    del reg_df['PTSP']
-    del reg_df['Merchant_Account_No']
-    del reg_df['AccountNo']
-    del reg_df['Registered_Date']
-    del reg_df['ConnectDate']
-    del reg_df['Contact']
-    del reg_df['Address']
-    del reg_df['Phone']
-    del reg_df['State']
+                # Deleting irrelevant columns from reg_df
+                del reg_df['Merchant_ID']
+                del reg_df['Bank']
+                del reg_df['MCC']
+                del reg_df['ptsp_code']
+                del reg_df['PTSP']
+                del reg_df['Merchant_Account_No']
+                del reg_df['AccountNo']
+                del reg_df['Registered_Date']
+                del reg_df['ConnectDate']
+                del reg_df['Contact']
+                del reg_df['Address']
+                del reg_df['Phone']
+                del reg_df['State']
 
 
-    # Update the 'STATUS' column based on conditions
-    reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
-        lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
-    )
+                # Update the 'STATUS' column based on conditions
+                reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
+                    lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
+                )
+                
+                # Update the 'CONNECTED' column based on conditions
+                reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
+                    lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
+                )
+
+                # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
+                reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
+            
+            except Exception as dataframeException:
+                print(f'An error occured in processing dataframe: {dataframeException}')
+
+
+            try:
+                reg_df.to_excel((str(rca_loc) + 'processed_rca.xlsx'), index=False, engine='xlsxwriter')
+                print(f'Processed RCA file loaded to {rca_loc}')
+            except Exception as ex:
+                print(f'An error occured in building processed excel file: {ex}')
+
+        except Exception as excelError:
+            print(f'Unable to read in raw file: {excelError}')
+
     
-    # Update the 'CONNECTED' column based on conditions
-    reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
-        lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
-    )
-
-    # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
-    reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
-
-
-    try:
-        reg_df.to_excel((str(rca_loc) + 'newrca.xlsx'), index=False, engine='xlsxwriter')
-
-    except Exception as ex:
-        print(f'An error occured in building excel file: {ex}')
         
 # Define a function to download the database file and return the local file path
 def download_database(url):
@@ -119,10 +134,10 @@ def download_database(url):
         with open(local_db_path, 'wb') as f:
             f.write(response.content)
         
-        print('DB Downloaded')
+        print('Database Downloaded')
         return local_db_path
     else:
-        raise Exception("Failed to download the database.")
+        raise Exception(f"Failed to download the database, response code: error{response.status_code}")
     
 # Define a function to connect and update the database file in local
 def connect_and_update_database():
@@ -130,40 +145,47 @@ def connect_and_update_database():
     loc_db_path = download_database(raw_url)
     conn = sqlite3.connect(loc_db_path)
 
-    for xfile in os.listdir(rca_loc):
-        if len(os.listdir(rca_loc)) > 0:
-            excel_file_loc = str(rca_loc) + str(xfile)
+    if len(os.listdir(rca_loc)) == 0:
+        print('No Available Processed RCA File')
+    elif len(os.listdir(rca_loc)) > 1:
+        print(f'Cannot process multiple files in {rca_loc}')
+    else:
+        for xfile in os.listdir(rca_loc):
+                excel_file_loc = str(rca_loc) + str(xfile)
 
-            df = pd.read_excel(excel_file_loc)
-            df = df.astype(str)
-            df['LAST_TRANSACTION_DATE'] = df['LAST_TRANSACTION_DATE'].apply(lambda x: x if pd.to_datetime(x, errors='coerce') is not pd.NaT else 'Not available')
-            df['LAST_TRANSACTION_DATE'] = pd.to_datetime(df['LAST_TRANSACTION_DATE'], errors='coerce')
-            df['LAST_TRANSACTION_DATE'] = df['LAST_TRANSACTION_DATE'].dt.date
+                df = pd.read_excel(excel_file_loc)
+                df = df.astype(str)
+                df['LAST_TRANSACTION_DATE'] = df['LAST_TRANSACTION_DATE'].apply(lambda x: x if pd.to_datetime(x, errors='coerce') is not pd.NaT else 'Not available')
+                df['LAST_TRANSACTION_DATE'] = pd.to_datetime(df['LAST_TRANSACTION_DATE'], errors='coerce')
+                df['LAST_TRANSACTION_DATE'] = df['LAST_TRANSACTION_DATE'].dt.date
 
-    cursor = conn.cursor()
-    query1 = """
-            CREATE TABLE RCA_table1 (
-                Terminal_ID TEXT, 
-                Merchant_Name TEXT, 
-                STATUS TEXT,
-                CONNECTED TEXT, 
-                LAST_TRANSACTION_DATE TEXT
-            );
-            """
-    query2 = "DROP TABLE RCA_table;"
-    
-    query3 = "ALTER TABLE RCA_table1 RENAME TO RCA_table;"
-    cursor.execute(query1)
-    cursor.execute(query2)
-    cursor.execute(query3)
+        print('RCA file ready for db upload')
+
+        cursor = conn.cursor()
+        query1 = """
+                CREATE TABLE RCA_table1 (
+                    Terminal_ID TEXT, 
+                    Merchant_Name TEXT, 
+                    Terminal_Owner TEXT,
+                    STATUS TEXT,
+                    CONNECTED TEXT, 
+                    LAST_TRANSACTION_DATE TEXT
+                );
+                """
+        query2 = "DROP TABLE RCA_table;"
+        
+        query3 = "ALTER TABLE RCA_table1 RENAME TO RCA_table;"
+        cursor.execute(query1)
+        cursor.execute(query2)
+        cursor.execute(query3)
 
 
-    # Replace the old database with the new file
-    try:
-        df.to_sql('RCA_table', conn, if_exists='replace', index=False)
-        print("Table modified")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+        # Replace the old database with the new file
+        try:
+            df.to_sql('RCA_table', conn, if_exists='replace', index=False)
+            print("Database updated")
+        except Exception as e:
+            print(f"An error occurred updating the database: {e}")
         
 def load_to_github():
 
@@ -229,6 +251,7 @@ def load_to_github():
 
 def clean_data():
 
+    # Delete the downloaded db file
     try:
         os.remove(local_db_path)
         print(f"File '{local_db_path}' deleted successfully.")
@@ -239,10 +262,33 @@ def clean_data():
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
 
+    # Delete the raw rca file
+    try:
+        os.remove(inputrca_loc)
+        print(f"Raw RCA file deleted successfully.")
+    except FileNotFoundError:
+        print(f"File '{inputrca_loc}' not found.")
+    except PermissionError:
+        print(f"Permission denied. Unable to delete file '{inputrca_loc}'.")
+    except Exception as e:
+        print(f"An error occurred while deleting the file: {e}")
+
+    # Finally delete the processed RCA file
+    for i in os.listdir(rca_loc):
+        del_file = str(rca_loc) + str(i)
+        try:
+            os.remove(del_file)
+            print(f"Processed RCA file deleted successfully.")
+        except FileNotFoundError:
+            print(f"File '{del_file}' not found.")
+        except PermissionError:
+            print(f"Permission denied. Unable to delete file '{del_file}'.")
+        except Exception as e:
+            print(f"An error occurred while deleting the file: {e}")
+
 def main():
     retrieve_rca_file()
     transform_file()
-    download_database(raw_url)
     connect_and_update_database()
     load_to_github()
     clean_data()
