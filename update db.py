@@ -3,21 +3,33 @@ import sqlite3
 import requests
 import base64
 import os
+import json
 from ftplib import FTP, error_perm
 
 
+# Adding the configuration file to boost credential security
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+config_path = '\\'.join([ROOT_DIR, 'credentials.json'])
 
-raw_url = 'https://github.com/daniel-DE-ITEX/PTSP-app-dataupdate/raw/master/data/testDB.db'
-sha_url = 'https://api.github.com/repos/daniel-DE-ITEX/PTSP-app-dataupdate/contents/data/testDB.db'
-rca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/processedrca_file/'
-inputrca_loc = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/inputrca/downloadrcafile.xlsx'
+# read json file
+with open(config_path) as config_file:
+    config = json.load(config_file)
+    config_dir = config['directories']
+    config_ftp = config['ftp']
+    config_git = config['github']
+
+
+raw_url = config_dir['RAW_DB']
+sha_url = config_dir['SHA_DB']
+rca_loc = config_dir['PROCESSED_RCA_LOC']
+inputrca_loc = config_dir['RAW_RCA_LOC']
 
 def retrieve_rca_file():
     try:
         # Connect to the FTP server
-        ftp_host = 'nibsswebserver.nibss-plc.com.ng'
-        ftp_user = 'fanwuzia'
-        ftp_pass = 'Mother89'
+        ftp_host = config_ftp['FTP_HOST']
+        ftp_user = config_ftp['FTP_USER']
+        ftp_pass = config_ftp['FTP_PASSWORD']
         ftp = FTP(ftp_host)
 
         # Log in
@@ -31,7 +43,7 @@ def retrieve_rca_file():
         file_list = ftp.nlst()
 
         if len(file_list) == 0:
-            print('RCA file unavailable, try later')
+            raise Exception('Folder empty, try later')
         else:
             for rcafile in file_list:
                 try:
@@ -66,59 +78,56 @@ def retrieve_rca_file():
 
 
 def transform_file():
-    if len(os.listdir(inputrca_loc)) == 0:
-        print('No raw file to process')
-    else:
+    try:
+        rca_df = pd.read_excel(inputrca_loc, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
+        print('Raw RCA file loaded')
         try:
-            rca_df = pd.read_excel(inputrca_loc, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
-            print('Raw RCA file loaded')
-            try:
-                # Break up the excel tabs into different dataframes
-                reg_df = rca_df['REGISTERED TERMINALS']
-                connected_df = rca_df['CONNECTED TERMINALS']
-                active_df = rca_df['ACTIVE TERMINALS']
+            # Break up the excel tabs into different dataframes
+            reg_df = rca_df['REGISTERED TERMINALS']
+            connected_df = rca_df['CONNECTED TERMINALS']
+            active_df = rca_df['ACTIVE TERMINALS']
 
-                # Deleting irrelevant columns from reg_df
-                del reg_df['Merchant_ID']
-                del reg_df['Bank']
-                del reg_df['MCC']
-                del reg_df['ptsp_code']
-                del reg_df['PTSP']
-                del reg_df['Merchant_Account_No']
-                del reg_df['AccountNo']
-                del reg_df['Registered_Date']
-                del reg_df['ConnectDate']
-                del reg_df['Contact']
-                del reg_df['Address']
-                del reg_df['Phone']
-                del reg_df['State']
+            # Deleting irrelevant columns from reg_df
+            del reg_df['Merchant_ID']
+            del reg_df['Bank']
+            del reg_df['MCC']
+            del reg_df['ptsp_code']
+            del reg_df['PTSP']
+            del reg_df['Merchant_Account_No']
+            del reg_df['AccountNo']
+            del reg_df['Registered_Date']
+            del reg_df['ConnectDate']
+            del reg_df['Contact']
+            del reg_df['Address']
+            del reg_df['Phone']
+            del reg_df['State']
 
 
-                # Update the 'STATUS' column based on conditions
-                reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
-                    lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
-                )
-                
-                # Update the 'CONNECTED' column based on conditions
-                reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
-                    lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
-                )
-
-                # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
-                reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
+            # Update the 'STATUS' column based on conditions
+            reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
+                lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
+            )
             
-            except Exception as dataframeException:
-                print(f'An error occured in processing dataframe: {dataframeException}')
+            # Update the 'CONNECTED' column based on conditions
+            reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
+                lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
+            )
+
+            # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
+            reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
+        
+        except Exception as dataframeException:
+            print(f'An error occured in processing dataframe: {dataframeException}')
 
 
-            try:
-                reg_df.to_excel((str(rca_loc) + 'processed_rca.xlsx'), index=False, engine='xlsxwriter')
-                print(f'Processed RCA file loaded to {rca_loc}')
-            except Exception as ex:
-                print(f'An error occured in building processed excel file: {ex}')
+        try:
+            reg_df.to_excel((str(rca_loc) + 'processed_rca.xlsx'), index=False, engine='xlsxwriter')
+            print(f'Processed RCA file loaded to {rca_loc}')
+        except Exception as ex:
+            print(f'An error occured in building processed excel file: {ex}')
 
-        except Exception as excelError:
-            print(f'Unable to read in raw file: {excelError}')
+    except FileNotFoundError: 
+        raise Exception('Raw RCA file Unavailable')
 
     
         
@@ -128,7 +137,7 @@ def download_database(url):
     if response.status_code == 200:
         # Define a local file path to save the downloaded database
         global local_db_path
-        local_db_path = 'C:/Users/daniel.opanubi/OneDrive - ITEX Integrated Services/Desktop/Projects/PTSP-app-dataupdate/download.db'
+        local_db_path = config_dir['LOCAL_DB']
         
         # Save the content of the response to the local file
         with open(local_db_path, 'wb') as f:
@@ -142,14 +151,14 @@ def download_database(url):
 # Define a function to connect and update the database file in local
 def connect_and_update_database():
 
-    loc_db_path = download_database(raw_url)
-    conn = sqlite3.connect(loc_db_path)
-
     if len(os.listdir(rca_loc)) == 0:
         print('No Available Processed RCA File')
     elif len(os.listdir(rca_loc)) > 1:
         print(f'Cannot process multiple files in {rca_loc}')
     else:
+        loc_db_path = download_database(raw_url)
+        conn = sqlite3.connect(loc_db_path)
+
         for xfile in os.listdir(rca_loc):
                 excel_file_loc = str(rca_loc) + str(xfile)
 
@@ -189,13 +198,11 @@ def connect_and_update_database():
         
 def load_to_github():
 
-    print('Loading to github')
     # Connect to the githubAPI with the access tokens and usernames
-    username = "daniel-DE-ITEX"
-    repository = "PTSP-app-dataupdate"
-    file_path = "data/testDB.db"
-
-    access_token = "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"
+    username = config_git['USERNAME']
+    repository = config_git['REPOSITORY']
+    file_path = config_git['PATH']
+    access_token = config_git['TOKEN']
     
     # Enter the location of the new db file
     new_db_filepath = local_db_path
