@@ -1,6 +1,0 @@
-# Ignore log file
-*.log
-
-
-# Ignore a specific file
-credentials.json
