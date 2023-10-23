@@ -3,7 +3,10 @@ import sqlite3
 import requests
 import base64
 import os
+from pymongo import MongoClient
+import urllib.parse
 import json
+from datetime import datetime, timedelta
 from ftplib import FTP, error_perm
 
 
@@ -17,12 +20,14 @@ with open(config_path) as config_file:
     config_dir = config['directories']
     config_ftp = config['ftp']
     config_git = config['github']
+    config_mongo = config['mongodb']
 
 
 raw_url = config_dir['RAW_DB']
 sha_url = config_dir['SHA_DB']
 rca_loc = config_dir['PROCESSED_RCA_LOC']
 inputrca_loc = config_dir['RAW_RCA_LOC']
+
 
 def retrieve_rca_file():
     try:
@@ -77,6 +82,50 @@ def retrieve_rca_file():
         ftp.quit()
 
 
+def get_recent_date():
+    # Connect to vas transactions in Mongodb to collect last date
+    host = config_mongo["HOST"]
+    port = config_mongo["PORT"]
+    user_name = config_mongo["USERNAME"]
+    pass_word = config_mongo["PASSWORD"]
+    db_name = config_mongo["DATABASE"]
+    client = MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}/{db_name}')
+    db = client['vas']
+    today = datetime.utcnow()
+    start = today - timedelta(days=30)
+
+    
+    pipeline = [
+        {
+            "$match": {
+                "updated_at": {"$gte": start, "$lt": today}
+            }
+        },
+        {
+            "$group": {
+                "_id": "$terminal",
+                "latest_date": {"$max": "$updated_at"}
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "terminal": "$_id",
+                "latest_date": 1
+            }
+        }
+    ]
+
+    # Sort the result by terminal if needed
+    # pipeline.append({"$sort": {"terminal": 1}})
+    
+    result = list(db.vas_transaction.aggregate(pipeline))
+
+    # Convert the list of dictionaries to a pandas DataFrame
+    df = pd.DataFrame(result)
+
+    return df
+
 def transform_file():
     try:
         rca_df = pd.read_excel(inputrca_loc, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
@@ -102,31 +151,41 @@ def transform_file():
             del reg_df['Phone']
             del reg_df['State']
 
-
             # Update the 'STATUS' column based on conditions
             reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
                 lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
             )
-            
+
             # Update the 'CONNECTED' column based on conditions
             reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
                 lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
             )
 
+            # Get the latest_date DataFrame using get_recent_date function
+            latest_date_df = get_recent_date()
+
+            # Merge the latest_date data into reg_df based on 'Terminal_ID' and 'terminal'
+            reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminal', how='left')
+
+            # Replace 'LAST_TRANSACTION_DATE' with the value from 'latest_date' where it's not null
+            reg_df['LAST_TRANSACTION_DATE'] = reg_df['latest_date'].combine_first(reg_df['LAST_TRANSACTION_DATE'])
+
             # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
             reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
-        
-        except Exception as dataframeException:
-            print(f'An error occured in processing dataframe: {dataframeException}')
 
+            # Drop the 'latest_date' column as it's no longer needed
+            reg_df.drop('latest_date', axis=1, inplace=True)
+
+        except Exception as dataframeException:
+            print(f'An error occurred in processing dataframe: {dataframeException}')
 
         try:
             reg_df.to_excel((str(rca_loc) + 'processed_rca.xlsx'), index=False, engine='xlsxwriter')
             print(f'Processed RCA file loaded to {rca_loc}')
         except Exception as ex:
-            print(f'An error occured in building processed excel file: {ex}')
+            print(f'An error occurred in building the processed excel file: {ex}')
 
-    except FileNotFoundError: 
+    except FileNotFoundError:
         raise Exception('Raw RCA file Unavailable')
 
     
