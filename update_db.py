@@ -92,7 +92,7 @@ def get_recent_date():
     client = MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}/{db_name}')
     db = client['vas']
     today = datetime.utcnow()
-    start = today - timedelta(days=30)
+    start = today - timedelta(days=25)
 
     
     pipeline = [
@@ -118,11 +118,12 @@ def get_recent_date():
 
     # Sort the result by terminal if needed
     # pipeline.append({"$sort": {"terminal": 1}})
-    
+    print('Processing dates from VAS')
     result = list(db.vas_transaction.aggregate(pipeline))
 
     # Convert the list of dictionaries to a pandas DataFrame
     df = pd.DataFrame(result)
+    print('Dates obtained from VAS')
 
     return df
 
@@ -151,6 +152,7 @@ def transform_file():
             del reg_df['Phone']
             del reg_df['State']
 
+            print('Transforming dataframe')
             # Update the 'STATUS' column based on conditions
             reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
                 lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
@@ -167,11 +169,12 @@ def transform_file():
             # Merge the latest_date data into reg_df based on 'Terminal_ID' and 'terminal'
             reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminal', how='left')
 
+            # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
+            reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
+
             # Replace 'LAST_TRANSACTION_DATE' with the value from 'latest_date' where it's not null
             reg_df['LAST_TRANSACTION_DATE'] = reg_df['latest_date'].combine_first(reg_df['LAST_TRANSACTION_DATE'])
 
-            # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
-            reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
 
             # Drop the 'latest_date' column as it's no longer needed
             reg_df.drop('latest_date', axis=1, inplace=True)
