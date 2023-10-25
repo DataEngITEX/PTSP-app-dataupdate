@@ -90,27 +90,27 @@ def get_recent_date():
     pass_word = config_mongo["PASSWORD"]
     db_name = config_mongo["DATABASE"]
     client = MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}/{db_name}')
-    db = client['vas']
+    db = client['eftEngine']
     today = datetime.utcnow()
-    start = today - timedelta(days=25)
+    start = today - timedelta(weeks=30)
 
     
     pipeline = [
         {
             "$match": {
-                "updated_at": {"$gte": start, "$lt": today}
+                "updatedAt": {"$gte": start, "$lt": today}
             }
         },
         {
             "$group": {
-                "_id": "$terminal",
-                "latest_date": {"$max": "$updated_at"}
+                "_id": "$terminalId",
+                "latest_date": {"$max": "$updatedAt"}
             }
         },
         {
             "$project": {
                 "_id": 0,
-                "terminal": "$_id",
+                "terminalId": "$_id",
                 "latest_date": 1
             }
         }
@@ -119,7 +119,7 @@ def get_recent_date():
     # Sort the result by terminal if needed
     # pipeline.append({"$sort": {"terminal": 1}})
     print('Processing dates from VAS')
-    result = list(db.vas_transaction.aggregate(pipeline))
+    result = list(db.journals_23_10_12.aggregate(pipeline))
 
     # Convert the list of dictionaries to a pandas DataFrame
     df = pd.DataFrame(result)
@@ -167,7 +167,7 @@ def transform_file():
             latest_date_df = get_recent_date()
 
             # Merge the latest_date data into reg_df based on 'Terminal_ID' and 'terminal'
-            reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminal', how='left')
+            reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminalId', how='left')
 
             # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
             reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
