@@ -92,7 +92,7 @@ def get_recent_date():
     client = MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}/{db_name}')
     db = client['eftEngine']
     today = datetime.utcnow()
-    start = today - timedelta(weeks=30)
+    start = today - timedelta(days=30)
 
     
     pipeline = [
@@ -153,11 +153,7 @@ def transform_file():
             del reg_df['State']
 
             print('Transforming dataframe')
-            # Update the 'STATUS' column based on conditions
-            reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
-                lambda tid: 'ACTIVE' if tid in active_df['Terminal_ID'].values else 'INACTIVE'
-            )
-
+            
             # Update the 'CONNECTED' column based on conditions
             reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
                 lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
@@ -165,6 +161,11 @@ def transform_file():
 
             # Get the latest_date DataFrame using get_recent_date function
             latest_date_df = get_recent_date()
+            
+            # Update the 'STATUS' column based on conditions
+            reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
+                lambda stat: 'ACTIVE' if stat in latest_date_df['terminalId'].values else 'INACTIVE'
+            )
 
             # Merge the latest_date data into reg_df based on 'Terminal_ID' and 'terminal'
             reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminalId', how='left')
