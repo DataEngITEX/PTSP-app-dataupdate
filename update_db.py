@@ -7,7 +7,9 @@ from pymongo import MongoClient
 import urllib.parse
 import json
 from datetime import datetime, timedelta
-from ftplib import FTP, error_perm
+from office365.sharepoint.client_context import ClientContext
+from office365.sharepoint.files.file import File
+from office365.runtime.auth.user_credential import UserCredential
 
 
 # Adding the configuration file to boost credential security
@@ -18,6 +20,7 @@ config_path = '\\'.join([ROOT_DIR, 'credentials.json'])
 with open(config_path) as config_file:
     config = json.load(config_file)
     config_dir = config['directories']
+    config_sp = config['sharepoint']
     config_ftp = config['ftp']
     config_git = config['github']
     config_mongo = config['mongodb']
@@ -27,59 +30,52 @@ raw_url = config_dir['RAW_DB']
 sha_url = config_dir['SHA_DB']
 rca_loc = config_dir['PROCESSED_RCA_LOC']
 inputrca_loc = config_dir['RAW_RCA_LOC']
+# SharePoint Details
+sharepoint_site_url = config_sp['SITE']
+sharepoint_username = config_sp['USERNAME']
+sharepoint_password = config_sp['PASSWORD']
 
 
-def retrieve_rca_file():
+def retrieve_rca_from_sharepoint():
+
+    # Create a sharepoint context
+    ctx_auth = UserCredential(sharepoint_username, sharepoint_password)
+    ctx = ClientContext(sharepoint_site_url).with_credentials(ctx_auth)
+    folder_relative_url = '/Shared Documents/RCA_input/'
+    folder_list_url = '/sites/NIBSS-ITEXrepo/Shared Documents/RCA_input'
+
     try:
-        # Connect to the FTP server
-        ftp_host = config_ftp['FTP_HOST']
-        ftp_user = config_ftp['FTP_USER']
-        ftp_pass = config_ftp['FTP_PASSWORD']
-        ftp = FTP(ftp_host)
+        # Get the folder by its relative URL
+        list_source = ctx.web.get_folder_by_server_relative_url(folder_list_url)
+        files = list_source.files
+        ctx.load(files)
+        ctx.execute_query()
 
-        # Log in
-        ftp.login(ftp_user, ftp_pass)
+        # Check if the folder is empty
+        if len(files) == 0:
+            print("The 'RCA_input' folder is empty. No files to download.")
+            return
 
-        # Change to the directory containing the file you want to download
-        source_directory = '/users/Report_EIU/ITEX/RCA_files_input'
-        destination_directory = '/users/Report_EIU/ITEX/RCA_files_archive'
+        # Create a local directory if it doesn't exist
+        if not os.path.exists(inputrca_loc):
+            os.makedirs(inputrca_loc)
 
-        ftp.cwd(source_directory)
-        file_list = ftp.nlst()
+        # Iterate through files and download them
+        for file in files:
+            file_name = file.properties['Name']
+            local_file_path = os.path.join(inputrca_loc, file_name)
+            file_relative_url = folder_relative_url + file_name
 
-        if len(file_list) == 0:
-            raise Exception('Folder empty, try later')
-        else:
-            for rcafile in file_list:
-                try:
-                    with open(rcafile, 'wb') as file:
-                        ftp.retrbinary('RETR ' + source_directory + '/' + rcafile, file.write)
-                    print(f'{rcafile} copied')
+            with open(local_file_path, "wb") as local_file:
+                file = ctx.web.get_file_by_server_relative_url(file_relative_url)
+                file.download(local_file)
+                ctx.execute_query()
+                print(f"Downloaded: {file_name}")
 
-                    with open(rcafile, 'rb') as file:
-                        ftp.storbinary('STOR ' + destination_directory + '/' + rcafile, file)
-                    print(f'{rcafile} uploaded to archive')
-
-                    # Download the file
-                    with open(inputrca_loc, 'wb') as file:
-                        ftp.retrbinary('RETR ' + rcafile, file.write)
-                        print(f'{rcafile} downloaded')
-
-                    ftp.delete(rcafile)
-                    print(f'{rcafile} deleted from the source directory')
-
-                except Exception as e:
-                    print(f"An error occurred while processing {rcafile}: {e}")
-
-    except error_perm as e:
-        print(f"FTP error: {e}")
-
+        print('Raw RCA downloaded successfully.')
     except Exception as e:
-        print(f"Unable to connect to FTP: {e}")
+        print(f"An error occurred: {e}")
 
-    finally:
-        # Close the FTP connection
-        ftp.quit()
 
 
 def get_recent_date():
@@ -333,15 +329,17 @@ def clean_data():
         print(f"An error occurred while deleting the file: {e}")
 
     # Delete the raw rca file
-    try:
-        os.remove(inputrca_loc)
-        print(f"Raw RCA file deleted successfully.")
-    except FileNotFoundError:
-        print(f"File '{inputrca_loc}' not found.")
-    except PermissionError:
-        print(f"Permission denied. Unable to delete file '{inputrca_loc}'.")
-    except Exception as e:
-        print(f"An error occurred while deleting the file: {e}")
+    for i in os.listdir(inputrca_loc):
+        del_file = str(inputrca_loc) + str(i)
+        try:
+            os.remove(del_file)
+            print(f"Raw RCA file deleted successfully.")
+        except FileNotFoundError:
+            print(f"File '{del_file}' not found.")
+        except PermissionError:
+            print(f"Permission denied. Unable to delete file '{del_file}'.")
+        except Exception as e:
+            print(f"An error occurred while deleting the file: {e}")
 
     # Finally delete the processed RCA file
     for i in os.listdir(rca_loc):
@@ -357,11 +355,11 @@ def clean_data():
             print(f"An error occurred while deleting the file: {e}")
 
 def main():
-    retrieve_rca_file()
-    transform_file()
-    connect_and_update_database()
-    load_to_github()
-    clean_data()
+    retrieve_rca_from_sharepoint()
+    #transform_file()
+    #connect_and_update_database()
+    #load_to_github()
+    #clean_data()
 
 if __name__ == '__main__':
     main()
