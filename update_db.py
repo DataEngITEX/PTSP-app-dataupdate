@@ -25,7 +25,7 @@ with open(config_path) as config_file:
     config_git = config['github']
     config_mongo = config['mongodb']
 
-
+# Defining file paths for downloads
 raw_url = config_dir['RAW_DB']
 sha_url = config_dir['SHA_DB']
 rca_loc = config_dir['PROCESSED_RCA_LOC']
@@ -124,69 +124,73 @@ def get_recent_date():
     return df
 
 def transform_file():
-    try:
-        rca_df = pd.read_excel(inputrca_loc, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
-        print('Raw RCA file loaded')
-        try:
-            # Break up the excel tabs into different dataframes
-            reg_df = rca_df['REGISTERED TERMINALS']
-            connected_df = rca_df['CONNECTED TERMINALS']
-            active_df = rca_df['ACTIVE TERMINALS']
+    if len(os.listdir(inputrca_loc)) == 0:
+        print('No Available Raw RCA File')
+        return
+    elif len(os.listdir(inputrca_loc)) > 1:
+        print(f'Cannot process multiple files in {inputrca_loc}')
+        return
+    else: 
+        for rawfile in os.listdir(inputrca_loc):
+            raw_rca_path = inputrca_loc + rawfile
+            rca_df = pd.read_excel(raw_rca_path, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
+            print('Raw RCA file loaded')
+            try:
+                # Break up the excel tabs into different dataframes
+                reg_df = rca_df['REGISTERED TERMINALS']
+                connected_df = rca_df['CONNECTED TERMINALS']
 
-            # Deleting irrelevant columns from reg_df
-            del reg_df['Merchant_ID']
-            del reg_df['Bank']
-            del reg_df['MCC']
-            del reg_df['ptsp_code']
-            del reg_df['PTSP']
-            del reg_df['Merchant_Account_No']
-            del reg_df['AccountNo']
-            del reg_df['Registered_Date']
-            del reg_df['ConnectDate']
-            del reg_df['Contact']
-            del reg_df['Address']
-            del reg_df['Phone']
-            del reg_df['State']
+                # Deleting irrelevant columns from reg_df
+                del reg_df['Merchant_ID']
+                del reg_df['Bank']
+                del reg_df['MCC']
+                del reg_df['ptsp_code']
+                del reg_df['PTSP']
+                del reg_df['Merchant_Account_No']
+                del reg_df['AccountNo']
+                del reg_df['Registered_Date']
+                del reg_df['ConnectDate']
+                del reg_df['Contact']
+                del reg_df['Address']
+                del reg_df['Phone']
+                del reg_df['State']
 
-            print('Transforming dataframe')
-            
-            # Update the 'CONNECTED' column based on conditions
-            reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
-                lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
-            )
+                print('Transforming dataframe')
+                
+                # Update the 'CONNECTED' column based on conditions
+                reg_df['CONNECTED'] = reg_df['Terminal_ID'].apply(
+                    lambda tid: 'YES' if tid in connected_df['Terminal_ID'].values else 'NO'
+                )
 
-            # Get the latest_date DataFrame using get_recent_date function
-            latest_date_df = get_recent_date()
-            
-            # Update the 'STATUS' column based on conditions
-            reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
-                lambda stat: 'ACTIVE' if stat in latest_date_df['terminalId'].values else 'INACTIVE'
-            )
+                # Get the latest_date DataFrame using get_recent_date function
+                latest_date_df = get_recent_date()
+                
+                # Update the 'STATUS' column based on if the terminal id is in latest_date_df
+                reg_df['STATUS'] = reg_df['Terminal_ID'].apply(
+                    lambda stat: 'ACTIVE' if stat in latest_date_df['terminalId'].values else 'INACTIVE'
+                )
 
-            # Merge the latest_date data into reg_df based on 'Terminal_ID' and 'terminal'
-            reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminalId', how='left')
+                # Merge the latest_date data into reg_df based on 'Terminal_ID' and 'terminal'
+                reg_df = reg_df.merge(latest_date_df, left_on='Terminal_ID', right_on='terminalId', how='left')
 
-            # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
-            reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
+                # Rename 'LastSeenDate' to 'LAST_TRANSACTION_DATE'
+                reg_df.rename(columns={'LastSeenDate': 'LAST_TRANSACTION_DATE'}, inplace=True)
 
-            # Replace 'LAST_TRANSACTION_DATE' with the value from 'latest_date' where it's not null
-            reg_df['LAST_TRANSACTION_DATE'] = reg_df['latest_date'].combine_first(reg_df['LAST_TRANSACTION_DATE'])
+                # Replace 'LAST_TRANSACTION_DATE' with the value from 'latest_date' where it's not null
+                reg_df['LAST_TRANSACTION_DATE'] = reg_df['latest_date'].combine_first(reg_df['LAST_TRANSACTION_DATE'])
 
 
-            # Drop the 'latest_date' column as it's no longer needed
-            reg_df.drop('latest_date', axis=1, inplace=True)
+                # Drop the 'latest_date' column as it's no longer needed
+                reg_df.drop('latest_date', axis=1, inplace=True)
 
-        except Exception as dataframeException:
-            print(f'An error occurred in processing dataframe: {dataframeException}')
+            except Exception as dataframeException:
+                print(f'An error occurred in processing dataframe: {dataframeException}')
 
-        try:
-            reg_df.to_excel((str(rca_loc) + 'processed_rca.xlsx'), index=False, engine='xlsxwriter')
-            print(f'Processed RCA file loaded to {rca_loc}')
-        except Exception as ex:
-            print(f'An error occurred in building the processed excel file: {ex}')
-
-    except FileNotFoundError:
-        raise Exception('Raw RCA file Unavailable')
+            try:
+                reg_df.to_excel((str(rca_loc) + 'processed_rca.xlsx'), index=False, engine='xlsxwriter')
+                print(f'Processed RCA file loaded to {rca_loc}')
+            except Exception as ex:
+                print(f'An error occurred in building the processed excel file: {ex}')
 
     
         
@@ -315,6 +319,59 @@ def load_to_github():
     else:
         print('Failed to update database file:', response.text, response.status_code)
 
+def move_raw_rca_to_archive():
+    ctx_auth = UserCredential(sharepoint_username, sharepoint_password)
+    ctx = ClientContext(sharepoint_site_url).with_credentials(ctx_auth)
+
+    # Load the file to archive
+    try:
+        if len(os.listdir(inputrca_loc)) > 0:
+            for file in os.listdir(inputrca_loc):
+                # Connect to SharePoint and upload files
+                local_file_path = inputrca_loc + file
+                
+                sharepoint_library_name = '/sites/NIBSS-ITEXrepo/Shared Documents/RCA_archives'
+
+                # Construct the file path in SharePoint
+                target_folder = ctx.web.get_folder_by_server_relative_url(sharepoint_library_name)
+                target_file = target_folder.upload_file(os.path.basename(local_file_path), open(local_file_path, 'rb'))
+                ctx.execute_query()
+
+                print(f"{file} uploaded successfully to RCA_archives.")
+
+        else:
+            print("Missing local raw RCA file")
+            return
+        
+    except Exception as e:
+        print(f"An error occured:{e}")
+
+    folder_list_url = '/sites/NIBSS-ITEXrepo/Shared Documents/RCA_input'
+
+    # Clean the file 
+    try:
+        # Get the folder by its relative URL
+        list_source = ctx.web.get_folder_by_server_relative_url(folder_list_url)
+        files = list_source.files
+        ctx.load(files)
+        ctx.execute_query()
+
+        # Check if the folder is empty
+        if len(files) == 0:
+            print("The 'RCA_input' folder is empty. No files to move.")
+            return
+        else:
+            # Iterate through files and download them
+            for file in files:
+                # Delete the original file in the source folder
+                file.delete_object()
+                ctx.execute_query()
+            print('Raw RCA deleted successfully.')
+
+    except Exception as e:
+        print(f"An error occurred deleting raw file: {e}")
+
+
 def clean_data():
 
     # Delete the downloaded db file
@@ -356,10 +413,11 @@ def clean_data():
 
 def main():
     retrieve_rca_from_sharepoint()
-    #transform_file()
-    #connect_and_update_database()
-    #load_to_github()
-    #clean_data()
+    transform_file()
+    connect_and_update_database()
+    load_to_github()
+    move_raw_rca_to_archive()
+    clean_data()
 
 if __name__ == '__main__':
     main()
