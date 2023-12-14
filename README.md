@@ -28,35 +28,35 @@ Ensure the pipeline has the necessary credentials to connect to the MongoDB serv
 Dependencies:
 
 ```office365, requests, os ```
-Description:
 
+Description:
 Connects to the specified SharePoint site to download raw RCA files from the 'RCA_input' folder.
 Organizes the downloaded files locally within the defined directory structure.
 
 2. Transform RCA Data
 Dependencies:
 
-pandas, os, datetime
-Description:
+``` pandas, os, datetime```
 
+Description:
 Processes the raw RCA file, executing complex data transformations and data cleaning operations.
 Generates a processed RCA file, incorporating pertinent updates and refined information.
 
 3. Connect and Update Database
 Dependencies:
 
-pandas, sqlite3, os
-Description:
+```pandas, sqlite3, os```
 
+Description:
 Downloads a database file from a specified URL.
 Establishes a connection to a SQLite database and executes an update operation with the processed RCA data.
 
 4. Load to GitHub
 Dependencies:
 
-requests, base64
-Description:
+```requests, base64```
 
+Description:
 Connects to a designated GitHub repository using provided access tokens and repository details.
 Retrieves the SHA of the existing database file on GitHub.
 Updates the GitHub repository with the new processed data, ensuring version control.
@@ -64,21 +64,23 @@ Updates the GitHub repository with the new processed data, ensuring version cont
 5. Move Raw RCA to Archive
 Dependencies:
 
-office365, os
-Description:
+```office365, os```
 
+Description:
 Uploads the raw RCA files to a specified SharePoint folder ('RCA_archives') for archival purposes.
 Deletes the original raw RCA files from the source folder ('RCA_input') on SharePoint.
 
 6. Clean Data
+
 Dependencies:
 
-os
-Description:
+```os```
 
+Description:
 Deletes temporary and unnecessary files, including the downloaded database file, raw RCA files, and processed RCA files.
 Enhances data hygiene and resource optimization.
-Configuration
+
+## Configuration
 The pipeline relies on a meticulously crafted configuration file (credentials.json) to store sensitive information and customizable parameters. It is imperative to populate this file accurately with the requisite credentials and configurations before initiating the script execution.
 
 ## Usage
