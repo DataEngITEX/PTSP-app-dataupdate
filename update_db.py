@@ -3,6 +3,8 @@ import sqlite3
 import requests
 import base64
 import os
+import psutil
+import time
 from pymongo import MongoClient
 import urllib.parse
 import json
@@ -37,22 +39,26 @@ sharepoint_password = config_sp['PASSWORD']
 
 
 def retrieve_rca_from_sharepoint():
-
-    # Create a sharepoint context
-    ctx_auth = UserCredential(sharepoint_username, sharepoint_password)
-    ctx = ClientContext(sharepoint_site_url).with_credentials(ctx_auth)
-    folder_relative_url = '/Shared Documents/RCA_input/'
-    folder_list_url = '/sites/NIBSS-ITEXrepo/Shared Documents/RCA_input'
-
     try:
-        # Get the folder by its relative URL
-        list_source = ctx.web.get_folder_by_server_relative_url(folder_list_url)
-        files = list_source.files
-        ctx.load(files)
+        # Create a SharePoint context
+        ctx_auth = UserCredential(sharepoint_username, sharepoint_password)
+        ctx = ClientContext(sharepoint_site_url).with_credentials(ctx_auth)
+
+        # Specify the SharePoint library and folder
+        library_name = "Shared Documents"
+        folder_relative_url = "/sites/NIBSS-ITEXrepo/Shared Documents/RCA_input"
+
+        # Get the folder by its server relative URL
+        folder = ctx.web.get_folder_by_server_relative_url(folder_relative_url)
+        ctx.load(folder)
         ctx.execute_query()
 
         # Check if the folder is empty
-        if len(files) == 0:
+        files = folder.files
+        ctx.load(files)
+        ctx.execute_query()
+        
+        if not files or len(files) == 0:
             print("The 'RCA_input' folder is empty. No files to download.")
             return
 
@@ -64,17 +70,17 @@ def retrieve_rca_from_sharepoint():
         for file in files:
             file_name = file.properties['Name']
             local_file_path = os.path.join(inputrca_loc, file_name)
-            file_relative_url = folder_relative_url + file_name
 
             with open(local_file_path, "wb") as local_file:
-                file = ctx.web.get_file_by_server_relative_url(file_relative_url)
                 file.download(local_file)
                 ctx.execute_query()
                 print(f"Downloaded: {file_name}")
 
         print('Raw RCA downloaded successfully.')
+
     except Exception as e:
         print(f"An error occurred: {e}")
+
 
 
 
@@ -115,7 +121,7 @@ def get_recent_date():
     # Sort the result by terminal if needed
     # pipeline.append({"$sort": {"terminal": 1}})
     print('Processing dates from VAS')
-    result = list(db.journals_23_10_12.aggregate(pipeline))
+    result = list(db.journals_24_01_03.aggregate(pipeline))
 
     # Convert the list of dictionaries to a pandas DataFrame
     df = pd.DataFrame(result)
@@ -134,6 +140,7 @@ def transform_file():
         for rawfile in os.listdir(inputrca_loc):
             raw_rca_path = inputrca_loc + rawfile
             rca_df = pd.read_excel(raw_rca_path, sheet_name=None) # Read in the RCA file and convert to pandas dataframe
+            
             print('Raw RCA file loaded')
             try:
                 # Break up the excel tabs into different dataframes
@@ -361,11 +368,18 @@ def move_raw_rca_to_archive():
             print("The 'RCA_input' folder is empty. No files to move.")
             return
         else:
-            # Iterate through files and download them
+            files_to_delete = []
+
+            # Iterate through files and add them to the delete list
             for file in files:
-                # Delete the original file in the source folder
+                files_to_delete.append(file)
+
+            # Delete the files outside the loop
+            for file in files_to_delete:
                 file.delete_object()
-                ctx.execute_query()
+
+            # Execute the query after all delete operations
+            ctx.execute_query()
             print('Raw RCA deleted successfully.')
 
     except Exception as e:
@@ -374,8 +388,20 @@ def move_raw_rca_to_archive():
 
 def clean_data():
 
+    time.sleep(5)
+
     # Delete the downloaded db file
     try:
+        # Attempt to terminate any processes holding a handle to the file
+        for proc in psutil.process_iter(['pid', 'name', 'open_files']):
+            open_files = proc.info.get('open_files')
+            if open_files:
+                for item in open_files:
+                    if local_db_path == item.path:
+                        print(f"Terminating process {proc.info['pid']} ({proc.info['name']}) holding the file '{local_db_path}'.")
+                        psutil.Process(proc.info['pid']).terminate()
+                        time.sleep(1)  # Allow some time for the process to terminate
+
         os.remove(local_db_path)
         print(f"File '{local_db_path}' deleted successfully.")
     except FileNotFoundError:
