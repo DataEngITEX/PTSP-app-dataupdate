@@ -388,7 +388,29 @@ def move_raw_rca_to_archive():
 
 def clean_data():
 
-    time.sleep(5)
+    time.sleep(30)
+
+    # Delete the downloaded db file
+    try:
+        # Attempt to terminate any processes holding a handle to the file
+        for proc in psutil.process_iter(['pid', 'name', 'open_files']):
+            open_files = proc.info.get('open_files')
+            if open_files:
+                for item in open_files:
+                    if local_db_path == item.path:
+                        print(f"Terminating process {proc.info['pid']} ({proc.info['name']}) holding the file '{local_db_path}'.")
+                        psutil.Process(proc.info['pid']).terminate()
+                        time.sleep(1)  # Allow some time for the process to terminate
+
+        os.remove(local_db_path)
+        print(f"File '{local_db_path}' deleted successfully.")
+    except FileNotFoundError:
+        print(f"File '{local_db_path}' not found.")
+    except PermissionError as pe:
+        print(f"Permission denied. Unable to delete file local_db file: {pe}")
+    except Exception as e:
+        print(f"An error occurred while deleting the file: {e}")
+
     # Delete the raw rca file
     for i in os.listdir(inputrca_loc):
         del_file = str(inputrca_loc) + str(i)
@@ -414,27 +436,6 @@ def clean_data():
             print(f"Permission denied. Unable to delete file '{del_file}'.")
         except Exception as e:
             print(f"An error occurred while deleting the file: {e}")
-
-    # Delete the downloaded db file
-    try:
-        # Attempt to terminate any processes holding a handle to the file
-        for proc in psutil.process_iter(['pid', 'name', 'open_files']):
-            open_files = proc.info.get('open_files')
-            if open_files:
-                for item in open_files:
-                    if local_db_path == item.path:
-                        print(f"Terminating process {proc.info['pid']} ({proc.info['name']}) holding the file '{local_db_path}'.")
-                        psutil.Process(proc.info['pid']).terminate()
-                        time.sleep(1)  # Allow some time for the process to terminate
-
-        os.remove(local_db_path)
-        print(f"File '{local_db_path}' deleted successfully.")
-    except FileNotFoundError:
-        print(f"File '{local_db_path}' not found.")
-    except PermissionError as pe:
-        print(f"Permission denied. Unable to delete file local_db file: {pe}")
-    except Exception as e:
-        print(f"An error occurred while deleting the file: {e}")
 
 def main():
     retrieve_rca_from_sharepoint()
