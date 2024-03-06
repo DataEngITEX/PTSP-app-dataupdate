@@ -388,7 +388,7 @@ def move_raw_rca_to_archive():
 
 def clean_data():
 
-    time.sleep(5)
+    time.sleep(30)
 
     # Delete the downloaded db file
     try:
@@ -406,8 +406,8 @@ def clean_data():
         print(f"File '{local_db_path}' deleted successfully.")
     except FileNotFoundError:
         print(f"File '{local_db_path}' not found.")
-    except PermissionError:
-        print(f"Permission denied. Unable to delete file '{local_db_path}'.")
+    except PermissionError as pe:
+        print(f"Permission denied. Unable to delete file local_db file: {pe}")
     except Exception as e:
         print(f"An error occurred while deleting the file: {e}")
 
