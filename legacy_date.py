@@ -5,7 +5,7 @@ import base64
 import os
 import psutil
 import time
-from datetime import datetime
+from datetime import date
 import json
 
 # Adding the configuration file to boost credential security
@@ -86,10 +86,22 @@ def create_legacy_dataframes():
     return current_df
 
 def update_legacy():
-
     leg_df = create_legacy_dataframes()
     cur_df = create_current_dataframes()
 
+    today_date = date.today() 
     for tid in cur_df['Terminal_ID']:
-        if tid in leg_df['Terminal_ID']:
-            leg_df['LAST_TRANSACTION_DATE'] = datetime.date.today()
+        if tid in leg_df['Terminal_ID'].values:
+            # Update the last transaction date for existing Terminal IDs
+            leg_df.loc[leg_df['Terminal_ID'] == tid, 'LAST_TRANSACTION_DATE'] = today_date
+        else:
+            # Append Terminal IDs not present in leg_df
+            leg_df = leg_df.append({'Terminal_ID': tid, 'LAST_TRANSACTION_DATE': today_date}, ignore_index=True)
+    
+    conn = sqlite3.connect(legacy_db_path)
+    # Replace the old database with the new file
+    try:
+        leg_df.to_sql('RCA_table', conn, if_exists='replace', index=False)
+        print("Legacy database updated")
+    except Exception as e:
+        print(f"An error occurred updating the database: {e}")
