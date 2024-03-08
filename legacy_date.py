@@ -19,15 +19,16 @@ with open(config_path) as config_file:
     config_sp = config['sharepoint']
     config_ftp = config['ftp']
     config_git = config['github']
-    config_ldd = config['LEGACY_DB']
 
 # Defining file paths for downloads
 raw_url = config_dir['RAW_DB']
+leg_url = config_dir['LEG_DB']
 sha_url = config_dir['SHA_DB']
 rca_loc = config_dir['PROCESSED_RCA_LOC']
 inputrca_loc = config_dir['RAW_RCA_LOC']
+#legacy_loc = config_dir['LEGACY_DB']
 
-def download_databases(url,durl):
+def download_current_database(url):
     response = requests.get(url)
     try:
         if response.status_code == 200:
@@ -39,51 +40,55 @@ def download_databases(url,durl):
             with open(local_db_path, 'wb') as f:
                 f.write(response.content)           
             print('Database Downloaded')
+            return local_db_path
         else:
             raise Exception(f"Failed to download the database, response code: error{response.status_code}")
     except Exception as e:
         print(f"Failed to download the database, response code: error{e}")
 
+def download_legacy_database(url):
     # download legacy data
-    response = requests.get(durl)
+    response = requests.get(url)
     try:
         if response.status_code == 200:
             # Define a local file path to save the downloaded database
             global legacy_db_path
-            legacy_db_path = config_ldd['LEGACY_DB']
+            legacy_db_path = config_dir['LEGACY_DB']
             
             # Save the content of the response to the local file
             with open(legacy_db_path, 'wb') as f:
                 f.write(response.content)
             print('Legacy database Downloaded')
-            
+            return legacy_db_path
         else:
             raise Exception(f"Failed to download the database, response code: error{response.status_code}")
     except Exception as de:
         print(f"Failed to download the database, response code: error{de}")
 
-    return local_db_path, legacy_db_path
 
 
 def create_current_dataframes():
+
+    local_db_path = download_current_database(raw_url)
+    # Connect to your SQLite database
+    c_conn = sqlite3.connect(local_db_path)
+    query1 = f"SELECT * FROM RCA_table"
+    current_df = pd.read_sql_query(query1, c_conn)
+    # Close the connection
+    c_conn.close()
+
+    return current_df
+
+def create_legacy_dataframes():
+    legacy_db_path = download_legacy_database(leg_url)
     # Connect to your SQLite database
     l_conn = sqlite3.connect(legacy_db_path)
-    query1 = f"SELECT * FROM RCA_table"
-    legacy_df = pd.read_sql_query(query1, l_conn)
+    query2 = f"SELECT * FROM RCA_table"
+    legacy_df = pd.read_sql_query(query2, l_conn)
     # Close the connection
     l_conn.close()
 
     return legacy_df
-
-def create_legacy_dataframes():
-    # Connect to your SQLite database
-    d_conn = sqlite3.connect(local_db_path)
-    query2 = f"SELECT * FROM RCA_table"
-    current_df = pd.read_sql_query(query2, d_conn)
-    # Close the connection
-    d_conn.close()
-
-    return current_df
 
 def update_legacy():
     leg_df = create_legacy_dataframes()
