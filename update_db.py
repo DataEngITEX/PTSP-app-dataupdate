@@ -8,7 +8,7 @@ import time
 from pymongo import MongoClient
 import urllib.parse
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from office365.sharepoint.client_context import ClientContext
 from office365.sharepoint.files.file import File
 from office365.runtime.auth.user_credential import UserCredential
@@ -29,7 +29,9 @@ with open(config_path) as config_file:
 
 # Defining file paths for downloads
 raw_url = config_dir['RAW_DB']
+leg_url = config_dir['LEG_DB']
 sha_url = config_dir['SHA_DB']
+leg_sha = config_dir['LEG_SHA']
 rca_loc = config_dir['PROCESSED_RCA_LOC']
 inputrca_loc = config_dir['RAW_RCA_LOC']
 # SharePoint Details
@@ -82,8 +84,6 @@ def retrieve_rca_from_sharepoint():
         print(f"An error occurred: {e}")
 
 
-
-
 def get_recent_date():
     # Connect to vas transactions in Mongodb to collect last date
     host = config_mongo["HOST"]
@@ -95,7 +95,6 @@ def get_recent_date():
     db = client['eftEngine']
     today = datetime.utcnow()
     start = today - timedelta(days=30)
-
     
     pipeline = [
         {
@@ -128,6 +127,7 @@ def get_recent_date():
     print('Dates obtained from VAS')
 
     return df
+
 
 def transform_file():
     if len(os.listdir(inputrca_loc)) == 0:
@@ -199,25 +199,102 @@ def transform_file():
             except Exception as ex:
                 print(f'An error occurred in building the processed excel file: {ex}')
 
-    
-        
+         
 # Define a function to download the database file and return the local file path
 def download_database(url):
     response = requests.get(url)
-    if response.status_code == 200:
-        # Define a local file path to save the downloaded database
-        global local_db_path
-        local_db_path = config_dir['LOCAL_DB']
-        
-        # Save the content of the response to the local file
-        with open(local_db_path, 'wb') as f:
-            f.write(response.content)
-        
-        print('Database Downloaded')
-        return local_db_path
-    else:
-        raise Exception(f"Failed to download the database, response code: error{response.status_code}")
+    try:
+        if response.status_code == 200:
+            # Define a local file path to save the downloaded database
+            global local_db_path
+            local_db_path = config_dir['LOCAL_DB']
+            
+            # Save the content of the response to the local file
+            with open(local_db_path, 'wb') as f:
+                f.write(response.content)           
+            print('Database Downloaded')
+            return local_db_path
+        else:
+            raise Exception(f"Failed to connect to the database, response code: error{response.status_code}")
+    except Exception as e:
+        print(f"Failed to download the database, response code: error{e}")
+
+
+def download_legacy_database(url):
+    # download legacy data
+    response = requests.get(url)
+    try:
+        if response.status_code == 200:
+            # Define a local file path to save the downloaded database
+            global legacy_db_path
+            legacy_db_path = config_dir['LEGACY_DB']
+            
+            # Save the content of the response to the local file
+            with open(legacy_db_path, 'wb') as f:
+                f.write(response.content)
+            print('Legacy database Downloaded')
+            return legacy_db_path
+        else:
+            raise Exception(f"Failed to download the database, response code: error{response.status_code}")
+    except Exception as de:
+        print(f"Failed to download the database, response code: error{de}")
+
+
+def create_current_dataframe():
+
+    local_db_path = download_database(raw_url)
+
+    # Connect to your SQLite database
+    c_conn = sqlite3.connect(local_db_path)
+    query1 = f"SELECT * FROM RCA_table"
+    current_df = pd.read_sql_query(query1, c_conn)
+    # Close the connection
+    c_conn.close()
+    print('Current df created')
+    return current_df
+
+
+def create_legacy_dataframe():
+
+    legacy_db_path = download_legacy_database(leg_url)
+
+    # Connect to your SQLite database
+    l_conn = sqlite3.connect(legacy_db_path)
+    query2 = f"SELECT * FROM RCA_table"
+    legacy_df = pd.read_sql_query(query2, l_conn)
+    # Close the connection
+    l_conn.close()
+    print('legacy df created')
+    return legacy_df
+
+
+def update_legacy():
+    leg_df = create_legacy_dataframe()
+    cur_df = create_current_dataframe()
+    print('Updating legacy date database')
+
+    today_date = date.today() 
+
+    for tid in cur_df['Terminal_ID']:
+        if tid in leg_df['Terminal_ID'].values:
+            # Update the last transaction date for existing Terminal IDs
+            leg_df.loc[leg_df['Terminal_ID'] == tid, 'LAST_TRANSACTION_DATE'] = today_date
+        else:
+            # Create a new DataFrame with the new row
+            new_row = pd.DataFrame({'Terminal_ID': [tid], 'LAST_TRANSACTION_DATE': [today_date]})
+            # Concatenate the new DataFrame with the existing one
+            leg_df = pd.concat([leg_df, new_row], ignore_index=True)
     
+    conn = sqlite3.connect(legacy_db_path)
+    # Replace the old database with the new file
+    try:
+        print('Updating RCA TABLE')
+        leg_df.to_sql('RCA_table', conn, if_exists='replace', index=False)
+        print("Legacy database updated")
+    except Exception as e:
+        raise e 
+
+
 # Define a function to connect and update the database file in local
 def connect_and_update_database():
 
@@ -226,8 +303,8 @@ def connect_and_update_database():
     elif len(os.listdir(rca_loc)) > 1:
         print(f'Cannot process multiple files in {rca_loc}')
     else:
-        loc_db_path = download_database(raw_url)
-        conn = sqlite3.connect(loc_db_path)
+        #loc_db_path = download_database(raw_url)
+        conn = sqlite3.connect(local_db_path)
 
         for xfile in os.listdir(rca_loc):
                 excel_file_loc = str(rca_loc) + str(xfile)
@@ -325,6 +402,68 @@ def load_to_github():
         print('Database file updated successfully.')
     else:
         print('Failed to update database file:', response.text, response.status_code)
+
+
+def load_legacy_to_github():
+
+    # Connect to the githubAPI with the access tokens and usernames
+    username = config_git['USERNAME']
+    repository = config_git['REPOSITORY']
+    file_path = config_git['LEG_PATH']
+    access_token = config_git['TOKEN']
+    
+    # Enter the location of the new db file
+    new_db_filepath = legacy_db_path
+    
+    # Read the binary data from the new SQLite database file
+    with open(new_db_filepath, 'rb') as file:
+        new_content = file.read()
+
+    # Encode the binary content as Base64
+    content_base64 = base64.b64encode(new_content).decode('utf-8')
+
+    # Create the URL for the API endpoint
+    url = f'https://api.github.com/repos/{username}/{repository}/contents/{file_path}'
+
+    # Create the request headers with the authorization token
+    headers = {
+        'Authorization': f'token {access_token}'
+    }
+
+    def get_sha():
+        response = requests.get(leg_sha, headers=headers)
+
+        if response.status_code == 200:
+            try:
+                # Try to parse JSON data
+                file_info = response.json()
+                sha = file_info.get("sha")
+                print('sha obtained')
+                return sha
+
+            except Exception as e:
+                    print(f"Error parsing JSON response: {e}")
+        else:
+            print(f"Failed to retrieve file info: {response.status_code} - {response.text}")
+
+        
+    sha = get_sha()
+
+    # Create the request payload with the new content as a base64-encoded string
+    data = {
+        'message': 'Update database file',
+        'content': content_base64,
+        'sha': sha
+    }
+
+    # Send a PUT request to update the file
+    response = requests.put(url, headers=headers, json=data)
+
+    if response.status_code == 200:
+        print('Database file updated successfully.')
+    else:
+        print('Failed to update database file:', response.text, response.status_code)
+
 
 def move_raw_rca_to_archive():
     ctx_auth = UserCredential(sharepoint_username, sharepoint_password)
@@ -440,8 +579,10 @@ def clean_data():
 def main():
     retrieve_rca_from_sharepoint()
     transform_file()
+    update_legacy()
     connect_and_update_database()
     load_to_github()
+    load_legacy_to_github()
     move_raw_rca_to_archive()
     clean_data()
 
