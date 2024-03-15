@@ -93,7 +93,7 @@ def get_recent_date():
     db_name = config_mongo["DATABASE"]
     client = MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}/{db_name}')
     db = client['eftEngine']
-    today = datetime.utcnow()
+    today = datetime.now(datetime.UTC)
     start = today - timedelta(days=30)
     
     pipeline = [
@@ -293,6 +293,7 @@ def update_legacy():
         print("Legacy database updated")
     except Exception as e:
         raise e 
+    conn.close()
 
 
 # Define a function to connect and update the database file in local
@@ -342,6 +343,8 @@ def connect_and_update_database():
             print("Database updated")
         except Exception as e:
             print(f"An error occurred updating the database: {e}")
+
+        conn.close()
         
 def load_to_github():
 
@@ -545,6 +548,16 @@ def clean_data():
         print(f"File '{local_db_path}' deleted successfully.")
     except FileNotFoundError:
         print(f"File '{local_db_path}' not found.")
+    except PermissionError as pe:
+        print(f"Permission denied. Unable to delete file local_db file: {pe}")
+    except Exception as e:
+        print(f"An error occurred while deleting the file: {e}")
+
+    try:
+        os.remove(legacy_db_path)
+        print(f"File '{legacy_db_path}' deleted successfully.")
+    except FileNotFoundError:
+        print(f"File '{legacy_db_path}' not found.")
     except PermissionError as pe:
         print(f"Permission denied. Unable to delete file local_db file: {pe}")
     except Exception as e:
