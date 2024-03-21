@@ -93,7 +93,7 @@ def get_recent_date():
     db_name = config_mongo["DATABASE"]
     client = MongoClient(f'mongodb://{user_name}:{urllib.parse.quote_plus(pass_word)}@{host}:{port}/{db_name}')
     db = client['eftEngine']
-    today = datetime.now(datetime.UTC)
+    today = datetime.now()
     start = today - timedelta(days=30)
     
     pipeline = [
