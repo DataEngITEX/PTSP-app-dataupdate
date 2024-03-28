@@ -463,7 +463,7 @@ def load_legacy_to_github():
     response = requests.put(url, headers=headers, json=data)
 
     if response.status_code == 200:
-        print('Database file updated successfully.')
+        print('Legacy dates database file updated successfully.')
     else:
         print('Failed to update database file:', response.text, response.status_code)
 
@@ -530,7 +530,7 @@ def move_raw_rca_to_archive():
 
 def clean_data():
 
-    time.sleep(30)
+    time.sleep(10)
 
     # Delete the downloaded db file
     try:
